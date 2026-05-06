@@ -1,4 +1,4 @@
-"""Small metric helpers for SMART examples and sanity checks."""
+"""Metrics."""
 
 from __future__ import annotations
 
@@ -24,7 +24,6 @@ def expected_calibration_error(
     probs: Optional[ArrayLike] = None,
     n_bins: int = 15,
 ) -> float:
-    """Compute top-label expected calibration error."""
     if labels is None:
         raise ValueError("labels must be provided")
     if (logits is None) == (probs is None):
@@ -51,14 +50,12 @@ def expected_calibration_error(
 
 
 def negative_log_likelihood(logits: ArrayLike, labels: ArrayLike) -> float:
-    """Compute average negative log-likelihood from logits."""
     logits_tensor = _as_tensor(logits, torch.float32)
     labels_tensor = _as_tensor(labels, torch.long).to(logits_tensor.device)
     return float(F.cross_entropy(logits_tensor, labels_tensor).item())
 
 
 def accuracy(logits: ArrayLike, labels: ArrayLike) -> float:
-    """Compute top-1 accuracy from logits."""
     logits_tensor = _as_tensor(logits, torch.float32)
     labels_tensor = _as_tensor(labels, torch.long).to(logits_tensor.device)
     return float(logits_tensor.argmax(dim=1).eq(labels_tensor).float().mean().item())

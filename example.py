@@ -1,4 +1,4 @@
-"""Minimal SMART example on synthetic logits."""
+"""SMART example."""
 
 from __future__ import annotations
 
@@ -11,9 +11,6 @@ from smart import SMART
 def make_overconfident_logits(n_samples: int, n_classes: int, seed: int) -> tuple[torch.Tensor, torch.Tensor]:
     generator = torch.Generator().manual_seed(seed)
     logits = 2.0 * torch.randn(n_samples, n_classes, generator=generator)
-
-    # Labels are sampled from a softer distribution, so raw logits are
-    # intentionally over-confident and need calibration.
     label_probs = torch.softmax(logits / 2.5, dim=1)
     labels = torch.multinomial(label_probs, num_samples=1, replacement=True, generator=generator).squeeze(1)
     return logits, labels

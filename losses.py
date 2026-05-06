@@ -1,4 +1,4 @@
-"""Charbonnier-SoftECE used by the public SMART implementation."""
+"""Charbonnier-SoftECE."""
 
 from __future__ import annotations
 
@@ -10,14 +10,6 @@ import torch.nn.functional as F
 
 
 class CharbonnierSoftECE(nn.Module):
-    """Charbonnier-smoothed SoftECE.
-
-    The objective uses Gaussian soft bin assignments and replaces the absolute
-    bin calibration gap with the smooth Charbonnier penalty
-    ``sqrt(gap^2 + delta^2)``. In this repository, ``SmoothSoftECE`` is an alias
-    for this same objective.
-    """
-
     def __init__(
         self,
         n_bins: int = 15,

@@ -1,8 +1,4 @@
-"""Core SMART calibrator.
-
-SMART learns a small margin-to-temperature map on held-out logits, then
-applies sample-specific temperature scaling to new logits.
-"""
+"""SMART core."""
 
 from __future__ import annotations
 
@@ -22,7 +18,6 @@ ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
 def set_seed(seed: int) -> None:
-    """Set common random seeds for reproducible calibration runs."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -52,7 +47,6 @@ def _validate_logits_and_labels(logits: torch.Tensor, labels: Optional[torch.Ten
 
 
 def compute_margins(logits: ArrayLike) -> ArrayLike:
-    """Return the top-two logit margin for each sample."""
     original_is_tensor = isinstance(logits, torch.Tensor)
     original_device = logits.device if original_is_tensor else torch.device("cpu")
     logits_tensor = torch.as_tensor(logits, dtype=torch.float32, device=original_device)
@@ -66,31 +60,32 @@ def compute_margins(logits: ArrayLike) -> ArrayLike:
 
 
 class MarginTemperatureNet(nn.Module):
-    """Two-layer MLP: margin -> positive sample temperature."""
-
-    def __init__(self, hidden_dim: int = 16, min_temperature: float = 0.1) -> None:
+    def __init__(self, hidden_dim: int = 16, nlayers: int = 2, min_temperature: float = 0.1) -> None:
         super().__init__()
-        self.fc1 = nn.Linear(1, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, 1)
+        if nlayers < 1:
+            raise ValueError("nlayers must be at least 1")
+
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Linear(1, hidden_dim))
+        for _ in range(nlayers - 1):
+            self.layers.append(nn.Linear(hidden_dim, hidden_dim))
+        self.layers.append(nn.Linear(hidden_dim, 1))
         self.min_temperature = min_temperature
 
     def forward(self, margins: torch.Tensor) -> torch.Tensor:
         x = margins.view(-1, 1)
-        x = F.relu(self.fc1(x))
-        return F.softplus(self.fc2(x)).view(-1) + self.min_temperature
+        for layer in self.layers[:-1]:
+            x = F.relu(layer(x))
+        return F.softplus(self.layers[-1](x)).view(-1) + self.min_temperature
 
 
 class SMART:
-    """Sample Margin-Aware Recalibration of Temperature.
-
-    Parameters match the paper defaults for the lightweight public release.
-    Inputs to ``fit`` and ``calibrate`` are logits with shape
-    ``[n_samples, n_classes]`` and integer labels with shape ``[n_samples]``.
-    """
+    """Sample Margin-Aware Recalibration of Temperature."""
 
     def __init__(
         self,
         hidden_dim: int = 16,
+        nlayers: int = 2,
         lr: float = 5e-3,
         epochs: int = 2000,
         loss: Union[str, Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = "smooth_soft_ece",
@@ -108,6 +103,7 @@ class SMART:
         verbose: bool = False,
     ) -> None:
         self.hidden_dim = hidden_dim
+        self.nlayers = nlayers
         self.lr = lr
         self.epochs = epochs
         self.loss_name = loss if isinstance(loss, str) else loss.__class__.__name__
@@ -125,7 +121,7 @@ class SMART:
         self.verbose = verbose
 
         set_seed(seed)
-        self.model = MarginTemperatureNet(hidden_dim, min_temperature).to(self.device)
+        self.model = MarginTemperatureNet(hidden_dim, nlayers, min_temperature).to(self.device)
         self.loss_fn = self._build_loss(loss)
         self.margin_mean: float = 0.0
         self.margin_std: float = 1.0
@@ -163,7 +159,6 @@ class SMART:
         return (margins - self.margin_mean) / self.margin_std
 
     def fit(self, val_logits: ArrayLike, val_labels: ArrayLike) -> "SMART":
-        """Fit SMART on validation logits and labels."""
         set_seed(self.seed)
         logits = _to_tensor(val_logits, dtype=torch.float32, device=self.device)
         labels = _to_tensor(val_labels, dtype=torch.long, device=self.device)
@@ -222,7 +217,6 @@ class SMART:
         return self
 
     def temperatures(self, logits: ArrayLike) -> ArrayLike:
-        """Predict one temperature per sample."""
         if not self.is_fitted:
             raise RuntimeError("Call fit(val_logits, val_labels) before predicting temperatures.")
 
@@ -240,11 +234,6 @@ class SMART:
         return temps.cpu().numpy()
 
     def calibrate(self, logits: ArrayLike, return_logits: bool = False) -> ArrayLike:
-        """Apply SMART to logits.
-
-        Returns calibrated probabilities by default. If ``return_logits=True``,
-        returns temperature-scaled logits instead.
-        """
         if not self.is_fitted:
             raise RuntimeError("Call fit(val_logits, val_labels) before calibrating logits.")
 
