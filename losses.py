@@ -1,4 +1,4 @@
-"""Loss functions used by the public SMART implementation."""
+"""Charbonnier-SoftECE used by the public SMART implementation."""
 
 from __future__ import annotations
 
@@ -9,20 +9,39 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class SoftECE(nn.Module):
-    """Differentiable ECE with Gaussian soft bin assignments."""
+class CharbonnierSoftECE(nn.Module):
+    """Charbonnier-smoothed SoftECE.
 
-    def __init__(self, n_bins: int = 15, sigma: float = 0.05, eps: float = 1e-12) -> None:
+    The objective uses Gaussian soft bin assignments and replaces the absolute
+    bin calibration gap with the smooth Charbonnier penalty
+    ``sqrt(gap^2 + delta^2)``. In this repository, ``SmoothSoftECE`` is an alias
+    for this same objective.
+    """
+
+    def __init__(
+        self,
+        n_bins: int = 15,
+        sigma: float = 0.05,
+        delta: float = 1e-3,
+        eps: float = 1e-12,
+    ) -> None:
         super().__init__()
         if n_bins <= 0:
             raise ValueError("n_bins must be positive")
         if sigma <= 0:
             raise ValueError("sigma must be positive")
+        if delta <= 0:
+            raise ValueError("delta must be positive")
         self.n_bins = n_bins
         self.sigma = sigma
+        self.delta = delta
         self.eps = eps
 
-    def _soft_bin_stats(self, logits: torch.Tensor, labels: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _soft_bin_stats(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         probs = F.softmax(logits, dim=1)
         confidences, predictions = probs.max(dim=1)
         accuracies = predictions.eq(labels).float()
@@ -39,31 +58,6 @@ class SoftECE(nn.Module):
 
     def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         bin_confidences, bin_accuracies, bin_weights = self._soft_bin_stats(logits, labels)
-        return (bin_weights * (bin_confidences - bin_accuracies).abs()).sum()
-
-
-class CharbonnierSoftECE(SoftECE):
-    """Charbonnier-smoothed SoftECE.
-
-    The Charbonnier penalty ``sqrt(x^2 + delta^2)`` is a smooth upper bound
-    on ``abs(x)``. In this repository, ``SmoothSoftECE`` is an alias for this
-    same objective.
-    """
-
-    def __init__(
-        self,
-        n_bins: int = 15,
-        sigma: float = 0.05,
-        delta: float = 1e-3,
-        eps: float = 1e-12,
-    ) -> None:
-        super().__init__(n_bins=n_bins, sigma=sigma, eps=eps)
-        if delta <= 0:
-            raise ValueError("delta must be positive")
-        self.delta = delta
-
-    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        bin_confidences, bin_accuracies, bin_weights = self._soft_bin_stats(logits, labels)
         gaps = bin_confidences - bin_accuracies
         penalty = torch.sqrt(gaps.square() + self.delta**2)
         return (bin_weights * penalty).sum()
@@ -72,4 +66,4 @@ class CharbonnierSoftECE(SoftECE):
 SmoothSoftECE = CharbonnierSoftECE
 
 
-__all__ = ["SoftECE", "CharbonnierSoftECE", "SmoothSoftECE"]
+__all__ = ["CharbonnierSoftECE", "SmoothSoftECE"]

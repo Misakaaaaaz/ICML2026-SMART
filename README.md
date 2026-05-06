@@ -28,6 +28,8 @@ calibrator = SMART(
     loss="smooth_soft_ece",
     n_bins=15,
     seed=1,
+    patience=200,
+    min_delta=1e-4,
 )
 
 calibrator.fit(val_logits, val_labels)
@@ -39,7 +41,9 @@ ece = expected_calibration_error(probs=calibrated_probs, labels=test_labels, n_b
 
 `val_logits` and `test_logits` can be either `numpy.ndarray` or `torch.Tensor`.
 SMART returns the same broad type: NumPy inputs produce NumPy outputs, and tensor
-inputs produce tensor outputs on the original device.
+inputs produce tensor outputs on the original device. The defaults use Adam with
+learning rate `5e-3`, a hidden dimension of 16, and early stopping with
+`patience=200` and `min_delta=1e-4`.
 
 ## Example
 
@@ -54,7 +58,8 @@ logits, and reports ECE/NLL before and after calibration.
 
 We use **Charbonnier-SoftECE** and **SmoothSoftECE** interchangeably in this
 codebase. `smooth_soft_ece`, `smoothsoftece`, `charbonnier_softece`, and
-`charbonnier_soft_ece` are accepted aliases for the same objective.
+`charbonnier_soft_ece` are accepted aliases for the same objective. The public
+release intentionally includes only this calibration loss.
 
 ## Citation
 

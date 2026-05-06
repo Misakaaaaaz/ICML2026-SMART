@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from losses import CharbonnierSoftECE, SoftECE
+from losses import CharbonnierSoftECE
 
 
 ArrayLike = Union[np.ndarray, torch.Tensor]
@@ -101,6 +101,9 @@ class SMART:
         min_temperature: float = 0.1,
         sigma: float = 0.05,
         delta: float = 1e-3,
+        early_stopping: bool = True,
+        patience: int = 200,
+        min_delta: float = 1e-4,
         normalize_margins: bool = True,
         verbose: bool = False,
     ) -> None:
@@ -115,6 +118,9 @@ class SMART:
         self.min_temperature = min_temperature
         self.sigma = sigma
         self.delta = delta
+        self.early_stopping = early_stopping
+        self.patience = patience
+        self.min_delta = min_delta
         self.normalize_margins = normalize_margins
         self.verbose = verbose
 
@@ -136,13 +142,9 @@ class SMART:
         name = str(loss).lower().replace("-", "_")
         if name in {"smooth_soft_ece", "smoothsoftece", "charbonnier_softece", "charbonnier_soft_ece"}:
             return CharbonnierSoftECE(n_bins=self.n_bins, sigma=self.sigma, delta=self.delta)
-        if name in {"soft_ece", "softece"}:
-            return SoftECE(n_bins=self.n_bins, sigma=self.sigma)
-        if name in {"ce", "cross_entropy", "nll"}:
-            return nn.CrossEntropyLoss()
         raise ValueError(
             "Unsupported loss. Use 'smooth_soft_ece', 'charbonnier_soft_ece', "
-            "'soft_ece', 'cross_entropy', or pass a callable."
+            "or pass a callable."
         )
 
     def _normalized_margins(self, logits: torch.Tensor, *, fit: bool) -> torch.Tensor:
@@ -173,6 +175,7 @@ class SMART:
         batch_size = self.batch_size or n_samples
         best_loss = float("inf")
         best_state = copy.deepcopy(self.model.state_dict())
+        epochs_without_improvement = 0
         self.loss_history = []
 
         for epoch in range(self.epochs):
@@ -196,12 +199,23 @@ class SMART:
 
             epoch_loss /= n_samples
             self.loss_history.append(epoch_loss)
-            if epoch_loss < best_loss:
+            if epoch_loss < best_loss - self.min_delta:
                 best_loss = epoch_loss
                 best_state = copy.deepcopy(self.model.state_dict())
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
 
             if self.verbose and (epoch + 1) % max(1, self.epochs // 10) == 0:
                 print(f"epoch {epoch + 1:4d}/{self.epochs}: loss={epoch_loss:.6f}")
+
+            if self.early_stopping and epochs_without_improvement >= self.patience:
+                if self.verbose:
+                    print(
+                        f"early stopping at epoch {epoch + 1}; "
+                        f"best loss={best_loss:.6f}"
+                    )
+                break
 
         self.model.load_state_dict(best_state)
         self.is_fitted = True
