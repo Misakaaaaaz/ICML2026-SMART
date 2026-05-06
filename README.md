@@ -21,6 +21,15 @@ calibrated_logits = calibrator.calibrate(test_logits, return_logits=True)
 python example.py
 ```
 
+```text
+ECE before SMART: 0.2662
+ECE after  SMART: 0.0317
+NLL before SMART: 2.4503
+NLL after  SMART: 2.0659
+Acc before SMART: 0.2700
+Acc after  SMART: 0.2700
+```
+
 ## Note
 
 `Charbonnier-SoftECE` and `SmoothSoftECE` are used interchangeably in this repository.
